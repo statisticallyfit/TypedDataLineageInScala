@@ -25,14 +25,18 @@ object flow {
 	case class AnnotatedDataFrame[D, J <: JoinList](toDF: DataFrame) extends Serializable
 
 
-	// Need way to produce annotated dataframe instances - create type class DataSource.
+	/**
+	 * Need way to produce annotated dataframe instances - create type class DataSource.
+	 * @tparam D
+	 * @tparam P
+	 */
 	// TODO - meaning of params D, P?
 	// TODO -- mean of D == dataset parameters?
 	// TODO -- meag of P == custom source parameters? (https://hyp.is/khcmoDTzEe2iyyMb-Wl4_Q/itnext
 	//  .io/making-the-spark-dataframe-composition-type-safe-r-7b6fed524ec2)
 
 	trait DataSource[D, P] {
-		def read(parameters: P)(implicit spark: SparkSession): AnnotatedDataFrame[D, HNil]
+		def read(parameters: P)(implicit evSpark: SparkSession): AnnotatedDataFrame[D, HNil]
 	}
 
 	object DataSource {
@@ -41,14 +45,14 @@ object flow {
 
 		// Helper is used to improve type inference and make API read more cleanly.
 		final class Helper[D] {
-			def read[P](parameters: P)(implicit ds: DataSource[D, P],
-								  s: SparkSession): AnnotatedDataFrame[D, HNil] ={
+			def read[P](parameters: P)(implicit evDataSrc: DataSource[D, P],
+								  evSpark: SparkSession): AnnotatedDataFrame[D, HNil] ={
 
-				ds.read(parameters = parameters)
+				evDataSrc.read(parameters = parameters)
 			}
 
-			def read(implicit ds: DataSource[D, Unit], s: SparkSession): AnnotatedDataFrame[D, HNil] =
-				ds.read(parameters = ())
+			def read(implicit evDataSrc: DataSource[D, Unit], s: SparkSession): AnnotatedDataFrame[D, HNil] =
+				evDataSrc.read(parameters = ())
 		}
 	}
 
@@ -83,7 +87,7 @@ object flow {
 	sealed trait Join[L, LJ <: JoinList, R, RJ <: JoinList] {
 		def join(left: AnnotatedDataFrame[L, LJ],
 			    right: AnnotatedDataFrame[R, RJ]
-			   )(implicit prepend: Prepend[LJ, RJ]): AnnotatedDataFrame[L, R :: prepend.Out]
+			   )(implicit evPrepend: Prepend[LJ, RJ]): AnnotatedDataFrame[L, R :: evPrepend.Out]
 	}
 
 
@@ -95,7 +99,7 @@ object flow {
 
 			override def join(left: AnnotatedDataFrame[L, LJ],
 						   right: AnnotatedDataFrame[R, RJ]
-						  )(implicit prepend: Prepend[LJ, RJ]): AnnotatedDataFrame[L, R :: prepend.Out] =
+						  )(implicit evPrepend: Prepend[LJ, RJ]): AnnotatedDataFrame[L, R :: evPrepend.Out] =
 
 				AnnotatedDataFrame(toDF =
 					left.toDF.join(
@@ -113,25 +117,30 @@ object flow {
 
 			override def join(left: AnnotatedDataFrame[L, LJ],
 						   right: AnnotatedDataFrame[R, RJ]
-						  )(implicit prepend: Prepend[LJ, RJ]): AnnotatedDataFrame[L, R :: prepend.Out] =
+						  )(implicit evPrepend: Prepend[LJ, RJ]): AnnotatedDataFrame[L, R :: evPrepend.Out] =
 				AnnotatedDataFrame(toDF =
 					left.toDF.join(
 						right =if(isBroadcast) broadcast(right.toDF) else right.toDF,
-						usingColumns =joinKeys,
+						usingColumns = joinKeys,
 						joinType = joinType.sparkName
 					))
 		}
 
 		sealed abstract class JoinType(val sparkName: String)
 		case object Inner extends JoinType("inner")
-		class object LeftOuter extends JoinType("left_outer")
-		class object FullOuter extends JoinType("full_outer")
+		case object LeftOuter extends JoinType("left_outer")
+		case object FullOuter extends JoinType("full_outer")
 	}
 
 
 	/**
 	 * Transform type class
 	 */
+	trait Transform[I, IJ <: JoinList, O, P] {
+
+		def transform(input: AnnotatedDataFrame[I, IJ], parameters: P)
+				   (implicit evSpark: SparkSession): AnnotatedDataFrame[O, HNil]
+	}
 
 
 
@@ -145,12 +154,36 @@ object flow {
 		implicit class AnnotatedDataFrameSyntax[L, LJ <: JoinList](left: AnnotatedDataFrame[L, LJ]) {
 
 
-			// TODO fix type here somehow?
-			def join[R, RJ <: JoinList](right: AnnotatedDataFrame[R, RJ] )(
-				implicit j: Join[L, LJ, R, RJ], p: Prepend[LJ, RJ]
-			): AnnotatedDataFrame[L, R :: p.Out] =
-				j.join(left, right)
+			// TODO why does it say
+			//		 Found: evPrepend.Out
+			//		 Required: Prepend[LJ, RJ]#Out ?????? What is the difference / meaning?
+			// NOTE answer = hashtag # is to access the type at TYPE-LEVEL whereas the dot operator is to access the type at VALUE-LEVEL
+			// SOURCES
+			// 		https://hyp.is/0uGTgjjqEe2R-qOLCl5FFA/stackoverflow.com/questions/2498779/accessing-type-members-outside-the-class-in-scala
+			//		https://hyp.is/YerV6DjrEe2lir8bbZaziA/blog.rockthejvm.com/scala-3-type-projections/
+			// 		https://hyp.is/Iq8s0jjzEe2nTu85E4u5mg/typelevel.org/blog/2015/07/23/type-projection.html
+			// 		(TODO suggestion to move to componion object instead of using #)
+			// 		meaning of # vs. dot = https://hyp.is/aLpw2DjzEe2gHiuCbFWUdA/stackoverflow.com/questions/16471318/scala-type-projection
+			// 		pg. 387 Dean Wampler Programming Scala
+			def join[R, RJ <: JoinList](right: AnnotatedDataFrame[R, RJ] )
+								  (implicit evJoin: Join[L, LJ, R, RJ],
+								   evPrepend: Prepend[LJ, RJ]
+								  ): AnnotatedDataFrame[L, R :: Prepend[LJ, RJ]#Out]
+			= evJoin.join(left, right)
+
+
+			def transform[R, P](parameters: P)(implicit evTransf: Transform[L, LJ, R, P],
+										evSpark: SparkSession): AnnotatedDataFrame[R, HNil] =
+				evTransf.transform(left, parameters)
+
+
+			// NOTE:    P = Unit (no parameters)
+			def transform[R](implicit evTransf: Transform[L, LJ, R, Unit],
+						 evSpark: SparkSession): AnnotatedDataFrame[R, HNil] =
+				evTransf.transform(left, ())
+
 		}
+
 	}
 
 
@@ -180,9 +213,9 @@ object Example {
 	object DeviceModel {
 		implicit val deviceModelDataSource = new DataSource[DeviceModel, Unit] {
 
-			override def read(parameters: Unit)(implicit spark: SparkSession) =
-				AnnotatedDataFrame[DeviceModel] (toDF =
-					spark.createDataFrame(Seq(
+			override def read(parameters: Unit)(implicit evSpark: SparkSession) =
+				AnnotatedDataFrame[DeviceModel, HNil] (toDF =
+					evSpark.createDataFrame(Seq(
 						(0, "model_0"),
 						(1, "model_1")
 					))
@@ -197,7 +230,9 @@ object Example {
 		 * Have here a type class instance
 		 */
 		implicit def deviceModelToMeasurementJoin[LJ <: JoinList, RJ <: JoinList] =
-			Join.usingColumns
+			Join.usingColumns[DeviceMeasurement, LJ, DeviceModel, RJ](
+				joinKeys = Seq("device_model_id")
+			)
 	}
 
 	/**
@@ -210,9 +245,9 @@ object Example {
 
 		implicit val deviceMeasurementDataSource = new DataSource[DeviceMeasurement, Unit] {
 
-			override def read(parameters: Unit)(implicit spark: SparkSession) =
-				AnnotatedDataFrame[DeviceMeasurement](
-					spark.createDataFrame(Seq(
+			override def read(parameters: Unit)(implicit evSpark: SparkSession) =
+				AnnotatedDataFrame[DeviceMeasurement, HNil](
+					evSpark.createDataFrame(Seq(
 						(0, 1.0),
 						(0, 2.0),
 						(1, 3.0)
@@ -223,11 +258,21 @@ object Example {
 	}
 
 
+}
+
+
+object ExampleRunner extends App {
+
+	import flow._
+	import flow.implicits._
+	import Example._
+
+
 
 	// Example: instantiating the two datasets
-	val deviceModel: AnnotatedDataFrame[DeviceModel] = DataSource[DeviceModel].read
+	val deviceModel: AnnotatedDataFrame[DeviceModel, HNil] = DataSource[DeviceModel].read
 
-	val deviceMeasurement: AnnotatedDataFrame[DeviceMeasurement] = DataSource[DeviceMeasurement].read
+	val deviceMeasurement: AnnotatedDataFrame[DeviceMeasurement, HNil] = DataSource[DeviceMeasurement].read
 
 
 	// Example: composability
