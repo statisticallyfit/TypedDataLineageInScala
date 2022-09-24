@@ -1,6 +1,7 @@
+package TypedDataLineageTutorials
+
 import com.github.mrpowers.spark.daria.sql.DataFrameHelpers.validatePresenceOfColumns
 import org.apache.spark.sql.DataFrame
-import com.github.mrpowers.spark.daria.sql.DataFrameValidator
 import org.apache.spark.sql.functions.{col, concat_ws}
 
 /**
