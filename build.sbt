@@ -35,6 +35,12 @@ resolvers += Resolver.sonatypeRepo("releases")
 addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.9.10")
 
 
+// Better monadic for - hopefully resolves the errors from arrows in iravid blog's for comprehensions
+// https://hyp.is/3Vo-ijziEe2bHbPD0_VR2A/github.com/oleg-py/better-monadic-for
+addCompilerPlugin("com.olegpy" %% "better-monadic-for" % "0.3.0-M4")
+
+
+
 libraryDependencies ++= Seq(
 	//////////////"org.apache.commons" % "commons-lang3" % "3.12.0", // was 3.6
 	//Scala Reflections

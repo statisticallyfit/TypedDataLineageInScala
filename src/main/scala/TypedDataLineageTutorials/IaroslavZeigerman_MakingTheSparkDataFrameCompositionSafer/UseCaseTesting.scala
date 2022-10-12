@@ -10,7 +10,7 @@ import shapeless.HNil
 
 object UseCaseTesting extends App  {
 
-	import TypedDataLineageTutorials.IaroslavZeigerman_MakingTheSparkDataFrameCompositionSafer.TypeJoinList.JoinList
+	import TypedDataLineageTutorials.IaroslavZeigerman_MakingTheSparkDataFrameCompositionSafer.TypeJoinList._
 	import TypedDataLineageTutorials.IaroslavZeigerman_MakingTheSparkDataFrameCompositionSafer.{AnnotatedDataFrame,
 		DataSource, Join, Transform}
 	import TypedDataLineageTutorials.IaroslavZeigerman_MakingTheSparkDataFrameCompositionSafer.implicits._

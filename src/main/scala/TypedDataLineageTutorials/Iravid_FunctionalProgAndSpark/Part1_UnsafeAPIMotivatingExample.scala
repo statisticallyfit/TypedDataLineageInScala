@@ -18,7 +18,7 @@ import scala.concurrent.duration._
  * SOURCE = https://github.com/iravid/blog-posts/blob/master/fp-and-spark.org
  *
  */
-object part1_UnsafeAPIMotivatingExample extends App {
+object Part1_UnsafeAPIMotivatingExample extends App {
 
 
 	implicit val session = (SparkSession

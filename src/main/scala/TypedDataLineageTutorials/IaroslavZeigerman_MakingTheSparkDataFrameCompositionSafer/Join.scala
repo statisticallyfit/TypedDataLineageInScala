@@ -1,6 +1,7 @@
 package TypedDataLineageTutorials.IaroslavZeigerman_MakingTheSparkDataFrameCompositionSafer
 
-import TypedDataLineageTutorials.IaroslavZeigerman_MakingTheSparkDataFrameCompositionSafer.TypeJoinList.JoinList
+
+import TypedDataLineageTutorials.IaroslavZeigerman_MakingTheSparkDataFrameCompositionSafer.TypeJoinList._
 import org.apache.spark.sql.Column
 import org.apache.spark.sql.functions.broadcast
 import shapeless.::
@@ -39,6 +40,8 @@ sealed trait Join[L, LJ <: JoinList, R, RJ <: JoinList] {
 		    right: AnnotatedDataFrame[R, RJ]
 		   )(implicit evPrepend: Prepend[LJ, RJ]): AnnotatedDataFrame[L, R :: Prepend[LJ, RJ]#Out] //evPrepend.Out]
 }
+
+// type PrependOut: Prepend[LJ, RJ]#Out = evPrepend.Out
 
 
 object Join {
